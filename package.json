@@ -1,0 +1,11 @@
+{
+    "name": "my-proxy-project",
+    "version": "1.0.0",
+    "description": "A serverless proxy for Concur authentication",
+    "main": "index.js",
+    "dependencies": {},
+    "scripts": {
+      "start": "netlify dev"
+    }
+  }
+  
