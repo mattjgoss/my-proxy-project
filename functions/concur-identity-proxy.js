@@ -1,5 +1,13 @@
 const https = require('https');
 
+// Retrieve the company token from environment variables.
+const companyToken = process.env.COMPANY_TOKEN;
+if (!companyToken) {
+  console.error("Environment variable COMPANY_TOKEN is missing.");
+  // You might want to fail fast if the token is missing.
+  throw new Error("Missing COMPANY_TOKEN in environment variables.");
+}
+
 exports.handler = async function (event, context) {
   console.log("concur-identity-proxy invoked with event:", JSON.stringify(event));
 
@@ -29,12 +37,14 @@ exports.handler = async function (event, context) {
   const filter = `userName eq "${username}"`;
   const encodedFilter = encodeURIComponent(filter);
 
+  // Note: We now add the "Authorization" header with our company token.
   const options = {
     hostname: "us2.api.concursolutions.com",
     path: `/profile/identity/v4/Users?filter=${encodedFilter}`,
     method: "GET",
     headers: {
-      "Accept": "application/json"
+      "Accept": "application/json",
+      "Authorization": `Bearer ${companyToken}`
     }
   };
   console.log("Request options for Concur Identity API:", options);
