@@ -1,6 +1,7 @@
+// functions/concur-identity-proxy.js
 const https = require('https');
 
-exports.handler = async function(event, context) {
+exports.handler = async function (event, context) {
   if (event.httpMethod !== "GET") {
     return {
       statusCode: 405,
@@ -8,8 +9,8 @@ exports.handler = async function(event, context) {
       body: JSON.stringify({ error: "Method Not Allowed" })
     };
   }
-  // Extract the access token from a query parameter or header if needed.
-  // For demo purposes, assume the client passes the token as a query parameter.
+  
+  // Retrieve token from query parameters
   const accessToken = event.queryStringParameters && event.queryStringParameters.token;
   if (!accessToken) {
     return {
@@ -19,8 +20,9 @@ exports.handler = async function(event, context) {
     };
   }
   
+  // Set up the options for the API request.
   const options = {
-    hostname: "us.api.concursolutions.com",
+    hostname: "us2.api.concursolutions.com",
     path: "/identity/v4/users/me",
     method: "GET",
     headers: {
@@ -28,9 +30,8 @@ exports.handler = async function(event, context) {
     }
   };
 
-  let identityResponse;
   try {
-    identityResponse = await new Promise((resolve, reject) => {
+    const identityResponse = await new Promise((resolve, reject) => {
       const req = https.request(options, (res) => {
         let data = "";
         res.on("data", chunk => { data += chunk; });
@@ -45,17 +46,16 @@ exports.handler = async function(event, context) {
       req.on("error", err => reject({ statusCode: 500, body: err.message }));
       req.end();
     });
+    return {
+      statusCode: identityResponse.statusCode,
+      headers: { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" },
+      body: identityResponse.body
+    };
   } catch (error) {
     return {
       statusCode: error.statusCode || 500,
       headers: { "Access-Control-Allow-Origin": "*" },
-      body: JSON.stringify({ error: error.body || "Error during Identity API call" })
+      body: JSON.stringify({ error: error.body || "Unknown error" })
     };
   }
-  
-  return {
-    statusCode: 200,
-    headers: { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" },
-    body: identityResponse.body
-  };
 };
