@@ -1,7 +1,7 @@
 const https = require('https');
 
 exports.handler = async function (event, context) {
-  console.log("Function invoked with event:", JSON.stringify(event));
+  console.log("concur-identity-proxy invoked with event:", JSON.stringify(event));
 
   // Only allow GET requests
   if (event.httpMethod !== "GET") {
@@ -13,40 +13,40 @@ exports.handler = async function (event, context) {
     };
   }
 
-  // Get the token from the query string
-  const token = event.queryStringParameters && event.queryStringParameters.token;
-  console.log("Extracted token (first 20 chars):", token ? token.substr(0, 20) + "..." : "none");
-
-  if (!token) {
-    console.error("Access token is missing in query parameters.");
+  // Expect a 'username' query parameter
+  const username = event.queryStringParameters && event.queryStringParameters.username;
+  if (!username) {
+    console.error("Missing 'username' parameter");
     return {
       statusCode: 400,
       headers: { "Access-Control-Allow-Origin": "*" },
-      body: JSON.stringify({ error: "Access token missing" })
+      body: JSON.stringify({ error: "username parameter missing" })
     };
   }
 
-  // Set up the options for the API call to Concur's Identity API.
-  // Note: Verify with Concur's documentation whether the hostname and path are correct.
+  // Build the filter query according to the API documentation:
+  // GET https://{datacenterURI}/profile/identity/v4/Users?filter=userName eq "username"
+  const filter = `userName eq "${username}"`;
+  const encodedFilter = encodeURIComponent(filter);
+
   const options = {
     hostname: "us2.api.concursolutions.com",
-    path: "/identity/v4/users/me",
+    path: `/profile/identity/v4/Users?filter=${encodedFilter}`,
     method: "GET",
     headers: {
-      "Authorization": `Bearer ${token}`,
       "Accept": "application/json"
     }
   };
-  console.log("Request options for Concur API:", options);
+  console.log("Request options for Concur Identity API:", options);
 
   try {
     const identityResponse = await new Promise((resolve, reject) => {
       const req = https.request(options, (res) => {
         let data = "";
-        console.log("Concur API response status:", res.statusCode);
+        console.log("Concur Identity API response status:", res.statusCode);
         res.on("data", chunk => { data += chunk; });
         res.on("end", () => {
-          console.log("Concur API response body:", data);
+          console.log("Concur Identity API response body:", data);
           if (res.statusCode === 200) {
             resolve({ statusCode: 200, body: data });
           } else {
@@ -61,12 +61,35 @@ exports.handler = async function (event, context) {
       req.end();
     });
 
-    console.log("Successfully retrieved identity response");
-    return {
-      statusCode: identityResponse.statusCode,
-      headers: { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" },
-      body: identityResponse.body
-    };
+    let jsonResponse;
+    try {
+      jsonResponse = JSON.parse(identityResponse.body);
+    } catch (parseError) {
+      console.error("Error parsing JSON response:", parseError);
+      return {
+        statusCode: 500,
+        headers: { "Access-Control-Allow-Origin": "*" },
+        body: JSON.stringify({ error: "Error parsing JSON response" })
+      };
+    }
+
+    // Expect the API to return a list of users in the Resources array
+    if (jsonResponse.Resources && jsonResponse.Resources.length > 0) {
+      const userId = jsonResponse.Resources[0].id;
+      console.log("Retrieved userId:", userId);
+      return {
+        statusCode: 200,
+        headers: { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: userId })
+      };
+    } else {
+      console.error("No user found for username:", username);
+      return {
+        statusCode: 404,
+        headers: { "Access-Control-Allow-Origin": "*" },
+        body: JSON.stringify({ error: "User not found" })
+      };
+    }
   } catch (error) {
     console.error("Error in identity proxy:", error);
     return {
