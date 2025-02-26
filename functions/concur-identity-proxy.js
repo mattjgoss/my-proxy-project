@@ -1,41 +1,50 @@
-// functions/concur-identity-proxy.js
 const https = require('https');
 
 exports.handler = async function (event, context) {
+  console.log("Function invoked with event:", JSON.stringify(event));
+
+  // Only allow GET requests
   if (event.httpMethod !== "GET") {
+    console.error("Invalid HTTP method:", event.httpMethod);
     return {
       statusCode: 405,
       headers: { "Access-Control-Allow-Origin": "*" },
       body: JSON.stringify({ error: "Method Not Allowed" })
     };
   }
-  
-  // Retrieve token from query parameters
-  const accessToken = event.queryStringParameters && event.queryStringParameters.token;
-  if (!accessToken) {
+
+  // Get the token from the query string
+  const token = event.queryStringParameters && event.queryStringParameters.token;
+  console.log("Extracted token:", token);
+
+  if (!token) {
+    console.error("Access token is missing in query parameters.");
     return {
       statusCode: 400,
       headers: { "Access-Control-Allow-Origin": "*" },
       body: JSON.stringify({ error: "Access token missing" })
     };
   }
-  
-  // Set up the options for the API request.
+
+  // Set up the options for the API call to Concur's Identity API.
   const options = {
     hostname: "us2.api.concursolutions.com",
     path: "/identity/v4/users/me",
     method: "GET",
     headers: {
-      "Authorization": `Bearer ${accessToken}`
+      "Authorization": `Bearer ${token}`
     }
   };
+  console.log("Request options for Concur API:", options);
 
   try {
     const identityResponse = await new Promise((resolve, reject) => {
       const req = https.request(options, (res) => {
         let data = "";
+        console.log("Concur API response status:", res.statusCode);
         res.on("data", chunk => { data += chunk; });
         res.on("end", () => {
+          console.log("Concur API response body:", data);
           if (res.statusCode === 200) {
             resolve({ statusCode: 200, body: data });
           } else {
@@ -43,15 +52,21 @@ exports.handler = async function (event, context) {
           }
         });
       });
-      req.on("error", err => reject({ statusCode: 500, body: err.message }));
+      req.on("error", err => {
+        console.error("HTTPS request error:", err);
+        reject({ statusCode: 500, body: err.message });
+      });
       req.end();
     });
+
+    console.log("Successfully retrieved identity response");
     return {
       statusCode: identityResponse.statusCode,
       headers: { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" },
       body: identityResponse.body
     };
   } catch (error) {
+    console.error("Error in identity proxy:", error);
     return {
       statusCode: error.statusCode || 500,
       headers: { "Access-Control-Allow-Origin": "*" },
