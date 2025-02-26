@@ -15,7 +15,7 @@ exports.handler = async function (event, context) {
 
   // Get the token from the query string
   const token = event.queryStringParameters && event.queryStringParameters.token;
-  console.log("Extracted token:", token);
+  console.log("Extracted token (first 20 chars):", token ? token.substr(0, 20) + "..." : "none");
 
   if (!token) {
     console.error("Access token is missing in query parameters.");
@@ -27,12 +27,14 @@ exports.handler = async function (event, context) {
   }
 
   // Set up the options for the API call to Concur's Identity API.
+  // Note: Verify with Concur's documentation whether the hostname and path are correct.
   const options = {
     hostname: "us2.api.concursolutions.com",
     path: "/identity/v4/users/me",
     method: "GET",
     headers: {
-      "Authorization": `Bearer ${token}`
+      "Authorization": `Bearer ${token}`,
+      "Accept": "application/json"
     }
   };
   console.log("Request options for Concur API:", options);
