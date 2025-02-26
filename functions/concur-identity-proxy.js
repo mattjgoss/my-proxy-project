@@ -1,19 +1,10 @@
-const https = require('https');
-
-// Retrieve the company token from environment variables.
-const companyToken = process.env.COMPANY_TOKEN;
-if (!companyToken) {
-  console.error("Environment variable COMPANY_TOKEN is missing.");
-  // You might want to fail fast if the token is missing.
-  throw new Error("Missing COMPANY_TOKEN in environment variables.");
-}
+const https = require("https");
+const { getNewAccessToken } = require("./lib/refreshToken");
 
 exports.handler = async function (event, context) {
-  console.log("concur-identity-proxy invoked with event:", JSON.stringify(event));
+  console.log("Concur Identity Proxy invoked");
 
-  // Only allow GET requests
   if (event.httpMethod !== "GET") {
-    console.error("Invalid HTTP method:", event.httpMethod);
     return {
       statusCode: 405,
       headers: { "Access-Control-Allow-Origin": "*" },
@@ -21,10 +12,8 @@ exports.handler = async function (event, context) {
     };
   }
 
-  // Expect a 'username' query parameter
-  const username = event.queryStringParameters && event.queryStringParameters.username;
+  const username = event.queryStringParameters?.username;
   if (!username) {
-    console.error("Missing 'username' parameter");
     return {
       statusCode: 400,
       headers: { "Access-Control-Allow-Origin": "*" },
@@ -32,68 +21,49 @@ exports.handler = async function (event, context) {
     };
   }
 
-  // Build the filter query according to the API documentation:
-  // GET https://{datacenterURI}/profile/identity/v4/Users?filter=userName eq "username"
-  const filter = `userName eq "${username}"`;
-  const encodedFilter = encodeURIComponent(filter);
-
-  // Note: We now add the "Authorization" header with our company token.
-  const options = {
-    hostname: "us2.api.concursolutions.com",
-    path: `/profile/identity/v4/Users?filter=${encodedFilter}`,
-    method: "GET",
-    headers: {
-      "Accept": "application/json",
-      "Authorization": `Bearer ${companyToken}`
-    }
-  };
-  console.log("Request options for Concur Identity API:", options);
-
   try {
+    const { access_token } = await getNewAccessToken();
+    const encodedFilter = encodeURIComponent(`userName eq "${username}"`);
+
+    const options = {
+      hostname: "us2.api.concursolutions.com",
+      path: `/profile/identity/v4/Users?filter=${encodedFilter}`,
+      method: "GET",
+      headers: {
+        "Accept": "application/json",
+        "Authorization": `Bearer ${access_token}`
+      }
+    };
+
+    console.log(`Requesting user info for: ${username}`);
+
     const identityResponse = await new Promise((resolve, reject) => {
       const req = https.request(options, (res) => {
         let data = "";
-        console.log("Concur Identity API response status:", res.statusCode);
         res.on("data", chunk => { data += chunk; });
         res.on("end", () => {
-          console.log("Concur Identity API response body:", data);
           if (res.statusCode === 200) {
-            resolve({ statusCode: 200, body: data });
+            resolve({ statusCode: 200, body: JSON.parse(data) });
           } else {
-            reject({ statusCode: res.statusCode, body: data });
+            reject(new Error(`Concur API error ${res.statusCode}: ${data}`));
           }
         });
       });
+
       req.on("error", err => {
-        console.error("HTTPS request error:", err);
-        reject({ statusCode: 500, body: err.message });
+        reject(err);
       });
+
       req.end();
     });
 
-    let jsonResponse;
-    try {
-      jsonResponse = JSON.parse(identityResponse.body);
-    } catch (parseError) {
-      console.error("Error parsing JSON response:", parseError);
-      return {
-        statusCode: 500,
-        headers: { "Access-Control-Allow-Origin": "*" },
-        body: JSON.stringify({ error: "Error parsing JSON response" })
-      };
-    }
-
-    // Expect the API to return a list of users in the Resources array
-    if (jsonResponse.Resources && jsonResponse.Resources.length > 0) {
-      const userId = jsonResponse.Resources[0].id;
-      console.log("Retrieved userId:", userId);
+    if (identityResponse.body.Resources?.length > 0) {
       return {
         statusCode: 200,
         headers: { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: userId })
+        body: JSON.stringify({ userId: identityResponse.body.Resources[0].id })
       };
     } else {
-      console.error("No user found for username:", username);
       return {
         statusCode: 404,
         headers: { "Access-Control-Allow-Origin": "*" },
@@ -101,11 +71,11 @@ exports.handler = async function (event, context) {
       };
     }
   } catch (error) {
-    console.error("Error in identity proxy:", error);
+    console.error("Error in identity proxy:", error.message);
     return {
-      statusCode: error.statusCode || 500,
+      statusCode: 500,
       headers: { "Access-Control-Allow-Origin": "*" },
-      body: JSON.stringify({ error: error.body || "Unknown error" })
+      body: JSON.stringify({ error: "Internal Server Error" })
     };
   }
 };
