@@ -1,8 +1,10 @@
+// Make sure this file is deployed to your Netlify function directory
+
 const https = require("https");
 const { getNewAccessToken } = require("./lib/refreshToken");
 
 exports.handler = async function (event, context) {
-  console.log("Concur Reports Proxy invoked");
+  console.log("Concur Reports Proxy invoked with params:", event.queryStringParameters);
 
   if (event.httpMethod !== "GET") {
     return {
@@ -37,7 +39,7 @@ exports.handler = async function (event, context) {
     return {
       statusCode: 400,
       headers: { "Access-Control-Allow-Origin": "*" },
-      body: JSON.stringify({ error: "Invalid contextType. Must be one of: TRAVELER, MANAGER, PROCESSOR, PROXY" })
+      body: JSON.stringify({ error: `Invalid contextType: ${contextType}. Must be one of: TRAVELER, MANAGER, PROCESSOR, PROXY` })
     };
   }
 
